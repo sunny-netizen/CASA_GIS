@@ -27,7 +27,9 @@ world_gend_ineq <- world %>%
         by.x="country" ,
         by.y="country")
 
-view(world_gend_ineq) # why does it come out with no rows :(
+view(world_gend_ineq) 
+# why does it come out with no rows :(
+# how to gitignore my data
 
 
 
