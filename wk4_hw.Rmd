@@ -1,0 +1,90 @@
+---
+title: "wk4_hw"
+author: "Yun Zhao"
+date: "10/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Week 4 Homework: Gender Inequality Task
+
+### Package Versions
+
+```{r first, eval=FALSE}
+# i have taken a snapshot with
+#renv::snapshot()
+
+#install the same packages
+#renv::restore()
+```
+
+### Load Packages
+
+```{r, message=FALSE}
+library(rgdal)
+library(sf)
+library(tmap)
+library(tmaptools)
+library(RSQLite)
+library(tidyverse)
+library(here)
+library(janitor)
+library(countrycode)
+```
+
+## Read in data:
+Located within the data folder:
+
+* HDI data from: http://hdr.undp.org/en/indicators/68606#
+* Shapefile from: https://hub.arcgis.com/datasets/2b93b06dc0dc4e809d3c8db5cb96ba69_0/explore?location=-2.688200%2C0.000000%2C1.41 
+
+
+```{r}
+
+HDI <- read.csv(here::here("Data/Gender Inequality Index (GII).csv"), 
+                skip = 5, header = TRUE, na.strings = "..", nrow = 189)
+World <- st_read("Data/World_Countries_(Generalized)/World_Countries__Generalized_.shp") %>%
+  clean_names(.)
+```
+
+## Column Names
+
+Select columns we want. 
+
+Using "countrycode" package, change country name to country code to bypass 
+join issues with country name columns.
+
+```{r}
+HDIcols <- HDI %>%
+  clean_names() %>%
+  select(country, x2019, x2010)%>%
+  mutate(difference=x2019-x2010)%>%
+  slice(1:189,)%>%
+  mutate(iso_code=countrycode(country, origin = 'country.name', destination = 'iso2c'))
+```
+
+## Join
+Join csv to world shapefile
+
+```{r}
+Join_HDI <- World %>%
+  clean_names() %>%
+  left_join(.,
+            HDIcols,
+            by = c("aff_iso" = "iso_code"))
+```
+
+### Bloopers
+
+```{r}
+#select(!(starts_with("x_")))
+#gend_inequ$"x" <- NULL
+```
+### References and Reads
+Andy's Github solutions: https://github.com/andrewmaclachlan/week4_live \
+countrycode package: https://github.com/vincentarelbundock/countrycode \
+Andy's Bookdown: https://github.com/andrewmaclachlan/bookdown \
+Markdown Cheatsheet: file:///Users/yun/Downloads/rmarkdown-2.0.pdf \
