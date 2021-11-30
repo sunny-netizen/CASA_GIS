@@ -37,3 +37,11 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Data
+CSVs/*
+GeoJSONs/*
+Geopackages/*
+QGIS_Projects/*
+Rasters/*
+Shapefiles/*

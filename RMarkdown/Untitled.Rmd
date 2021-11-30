@@ -1,0 +1,44 @@
+---
+title: "wk5_prac"
+author: "Yun Zhao"
+date: "11/3/2021"
+output: html_document
+---
+# Notes
+
+bedroom is at ward - convert to borough
+could also probably just use Local Area District Data
+Hotel is poly - summarise over borough
+Airbnb is points - summarise over borough
+
+```{r library}
+library(sf)
+library(tidyverse)
+library(janitor)
+library(here)
+```
+
+```{r wards etc}
+Londonboroughs <- st_read(here::here("statistical-gis-boundaries-london",
+                                     "statistical-gis-boundaries-london",
+                                     "ESRI",
+                                     "London_Borough_Excluding_MHW.shp"))
+
+Londonwards <- st_read(here::here("statistical-gis-boundaries-london",
+                                     "statistical-gis-boundaries-london",
+                                     "ESRI",
+                                     "London_Ward.shp"))
+
+```
+
+
+```{r accomodation data}
+OSM <- st_read(here::here("greater-london-latest-free.shp",
+                          "gis_osm_pois_a_free_1.shp"))%>%
+  st_transform(., 27700)
+
+Airbnb
+
+Worldcities
+
+```

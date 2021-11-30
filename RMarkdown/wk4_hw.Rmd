@@ -43,11 +43,14 @@ Located within the data folder:
 
 
 ```{r}
-
-HDI <- read.csv(here::here("Data/Gender Inequality Index (GII).csv"), 
+HDI <- read.csv(here::here("CSVs", "Gender Inequality Index (GII).csv"), 
                 skip = 5, header = TRUE, na.strings = "..", nrow = 189)
-World <- st_read("Data/World_Countries_(Generalized)/World_Countries__Generalized_.shp") %>%
+World <- st_read(here::here('Shapefiles', 'World_Countries_(Generalized)', 'World_Countries__Generalized_.shp')) %>%
   clean_names(.)
+
+#best practice to use here, operable across operating systems
+#gitignore star *
+#Folder1/FOlder2/* ignore s a folder in
 ```
 
 ## Column Names
@@ -75,6 +78,8 @@ Join_HDI <- World %>%
   left_join(.,
             HDIcols,
             by = c("aff_iso" = "iso_code"))
+
+qtm(Join_HDI)
 ```
 
 ### Bloopers

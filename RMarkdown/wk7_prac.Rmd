@@ -1,0 +1,215 @@
+---
+title: "Untitled"
+author: "Yun Zhao"
+date: "11/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+#Wrangling Munging
+library(rgdal)
+library(here)
+library(janitor)
+library(dplyr)
+library(stringr)
+library(tidyverse)
+library(car)
+library(crosstalk)
+
+#Geo
+library(sf)
+library(sp)
+library(fs)
+library(rgeos)
+library(geojson)
+library(geojsonio)
+library(raster)
+library(fpc)
+library(spatstat)
+library(spdep)
+library(geojsonio)
+
+#Plotting
+library(plotly)
+library(maptools)
+library(tmap)
+library(tmaptools)
+library(GISTools)
+library(OpenStreetMap)
+
+#Stats
+library(broom) # or tidymodels
+library(mapview)
+install.packages("mapview")
+remove.packages(mapview)
+library(tidypredict)
+```
+
+# Load and Look: London Ward Boundaries
+https://data.london.gov.uk/download/statistical-gis-boundary-files-london/9ba8c833-6370-4b11-abdc-314aa020d5e0/statistical-gis-boundaries-london.zip
+```{r}
+# download a zip file containing some boundaries we want to use
+# download.file("url", destfile = "path/name")
+
+# look what is inside the zip
+Londonwards<-dir_info(here::here("Shapefiles", 
+                                 "statistical-gis-boundaries-london", 
+                                 "ESRI"))%>%
+  # $ means exact match
+  dplyr::filter(str_detect(path,   #???????? path and dir_info
+                           "London_Ward_CityMerged.shp$"))%>%
+  dplyr::select(path)%>%
+  pull()%>%
+  # read in the file in
+  st_read()
+  
+# check the data
+qtm(Londonwards)
+```
+
+
+# Load and Look: London Ward Profiles
+https://data.london.gov.uk/download/ward-profiles-and-atlas/772d2d64-e8c6-46cb-86f9-e52b4c7851bc/ward-profiles-excel-version.csv
+```{r}
+#read in some attribute data
+LondonWardProfiles <- read_csv(here::here('CSVs', 'ward-profiles-excel-version.csv'),
+                               na = c("", "NA", "n/a", "NaN", "N/A"), # try a bunch to fix variable class
+                               locale = locale(encoding = 'Latin1'), 
+                               col_names = TRUE)
+head(LondonWardProfiles)
+
+#check all of the columns have been read in correctly
+Datatypelist <- LondonWardProfiles %>% 
+  summarise_all(class) %>%
+  pivot_longer(everything(), 
+               names_to="All_variables", 
+               values_to="Variable_class")
+
+Datatypelist
+```
+
+# Merge and Map
+```{r}
+#merge boundaries and data
+LonWardProfiles <- Londonwards%>%
+  left_join(.,
+            LondonWardProfiles, 
+            by = c("GSS_CODE" = "New code"))
+
+#let's map our dependent variable to see if the join has worked:
+tmap_mode("plot")
+qtm(LonWardProfiles, 
+    fill = "Average GCSE capped point scores - 2014", 
+    borders = NULL,
+    fill.palette = "Blues")
+```
+
+# Load and Look
+```{r}
+#might be a good idea to see where the secondary schools are in London too
+london_schools <- read_csv("https://data.london.gov.uk/download/london-schools-atlas/57046151-39a0-45d9-8dc0-27ea7fd02de8/all_schools_xy_2016.csv")
+
+#from the coordinate values stored in the x and y columns, which look like they are latitude and longitude values, create a new points dataset
+lon_schools_sf <- st_as_sf(london_schools, 
+                           coords = c("x","y"), 
+                           crs = 4326)
+
+lond_sec_schools_sf <- lon_schools_sf %>%
+  filter(PHASE=="Secondary")
+
+tmap_mode("plot")
+qtm(lond_sec_schools_sf)
+
+```
+# Regression Basics
+```{r}
+q <- qplot(x = `Unauthorised Absence in All Schools (%) - 2013`, 
+           y = `Average GCSE capped point scores - 2014`, 
+           data=LonWardProfiles)
+
+#plot with a regression line - note, I've added some jitter here as the x-scale is rounded
+q + stat_smooth(method="lm", se=FALSE, size=1) + 
+  geom_jitter()
+```
+
+# Linear Regression Model in R
+```{r}
+#run the linear regression model and store its outputs in an object called model1
+Regressiondata<- LonWardProfiles%>%
+  clean_names()%>%
+  dplyr::select(average_gcse_capped_point_scores_2014, 
+                unauthorised_absence_in_all_schools_percent_2013)
+
+#now model
+model1 <- Regressiondata %>%
+  lm(average_gcse_capped_point_scores_2014 ~
+               unauthorised_absence_in_all_schools_percent_2013,
+     data=.)
+
+#show the summary of those outputs
+summary(model1)
+
+#Using broom
+tidy(model1)
+glance(model1)
+
+pack(tidypredict)
+
+# Using tidypredict
+Regressiondata %>%
+  tidypredict_to_column(model1)
+```
+Bootstrap resampling: https://andrewmaclachlan.github.io/CASA0005repo_20202021/gwr-and-spatially-lagged-regression.html#bootstrap-resampling
+
+# Regression Assumptions
+Linear relationship - check with scatterplot, 
+or if frequency distributions of the variables are normal (how why???)
+```{r}
+# use Janitor to clean up the names.
+LonWardProfiles <- LonWardProfiles %>%
+  clean_names()
+
+#let's check the distribution of these variables first
+ggplot(LonWardProfiles, aes(x=average_gcse_capped_point_scores_2014)) + 
+  geom_histogram(aes(y = ..density..),
+                 binwidth = 5) + 
+  geom_density(colour="red", 
+               size=1, 
+               adjust=1)
+## why no work????
+
+ggplot(LonWardProfiles, aes(x=unauthorised_absence_in_all_schools_percent_2013)) +
+  geom_histogram(aes(y = ..density..),
+                 binwidth = 0.1) + 
+  geom_density(colour="red",
+               size=1, 
+               adjust=1)
+
+#compare with skewed median house price variable
+ggplot(LonWardProfiles, aes(x=median_house_price_2014)) + 
+  geom_histogram()
+#no linear relationship, maybe curvilinear relationship
+
+#raw house price variable against GCSE scores
+qplot(x = median_house_price_2014, 
+      y = average_gcse_capped_point_scores_2014, 
+      data=LonWardProfiles)
+```
+
+One way that we might be able to achieve a linear relationship between our two variables is to transform the non-normally distributed variable so that it is more normally distributed.
+
+
+
+
+
+

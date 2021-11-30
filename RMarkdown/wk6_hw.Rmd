@@ -1,0 +1,66 @@
+---
+title: "wk6_hw"
+author: "Yun Zhao"
+date: "11/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#Wrangling Munging
+library(here)
+library(janitor)
+library(dplyr)
+library(stringr)
+library(tidyverse)
+
+#Geo
+library(sf)
+library(sp)
+library(rgeos)
+library(geojson)
+library(geojsonio)
+library(raster)
+library(fpc)
+library(spatstat)
+library(geojsonio)
+
+#Plotting
+library(maptools)
+library(tmap)
+library(tmaptools)
+library(GISTools)
+library(OpenStreetMap)
+```
+
+
+Open Street Map POI data
+  Instead: https://www.getthedata.com/open-pubs
+  Instead: http://download.slipo.eu/results/osm-to-csv/europe/great-britain/
+Police data, Brighton is within the Sussex Police force
+LSOA shapefile
+```{r}
+
+#/Users/yun/Documents/CASA/GIS/CASA_GIS/CSVs/open_pubs.csv
+brighton_pubs <- geojson_read('brighton_pubs.geojson', parse = FALSE)
+brighton_pubs <- geojson_sf('brighton_pubs.geojson')
+plot(brighton_pubs)
+
+lsoa <- st_read(here::here('Shapefiles',
+    'Lower_Super_Output_Area_(LSOA)_IMD2019__(WGS84)-shp/5878ebcf-f091-4bde-8864-aa547dd45afd2020330-1-8g4usn.8evuq.shp'))
+lsoa%>%
+  st_transform(.,27700)
+
+brighton_crime <- read_csv(here:here('CSVs', '2021-09-sussex-street.csv'))%>%
+  clean_names()
+
+
+
+                   
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
