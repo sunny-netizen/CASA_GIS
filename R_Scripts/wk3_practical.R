@@ -1,12 +1,11 @@
 library(sf)
 library(here)
-here()
 
 # see inside
-st_layers(here::here("prac3_data", "gadm36_AUS.gpkg"))
+st_layers(here::here("Geopackages", "gadm36_AUS.gpkg"))
 
 # READ LAYERS
-Ausoutline <- st_read(here("prac3_data", "gadm36_AUS.gpkg"), 
+Ausoutline <- st_read(here("Geopackages", "gadm36_AUS.gpkg"), 
                       layer='gadm36_AUS_0')
 #check CRS
 print(Ausoutline)

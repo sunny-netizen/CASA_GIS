@@ -8,24 +8,25 @@ library(ggplot2)
 library(tidyverse)
 
 # VECTOR DATA from GADM
-brazil <- st_read(here("hw3_data", "gadm36_BRA.gpkg"),
+brazil <- st_read(here::here("Geopackages", "gadm36_BRA.gpkg"),
                         layer='gadm36_BRA_0')     # why this???
 
 #Cities Shapefile from ESRI
-world_cities <- st_read("/Users/yun/Documents/CASA/GIS/wk3/hw3_data/World_Cities/World_Cities.shp")%>%
+world_cities <- st_read(here::here("Shapefiles/World_Cities/World_Cities.shp"))%>%
   clean_names()
-brazil_cities <- World_cities %>%
+brazil_cities <- world_cities %>%
   filter(cntry_name == "Brazil")
 
 # RASTER DATA from WorldClim BCC-CSM2-MR. Read in with raster(), stack(), or brick()
-ssp1_brazil <- brick(here("hw3_data", "wc2.1_2.5m_tmax_BCC-CSM2-MR_ssp126_2081-2100.tif"))%>%
+ssp1_brazil <- brick(here("Rasters", "WorldClim", "wc2.1_2.5m_tmax_BCC-CSM2-MR_ssp126_2081-2100.tif"))%>%
   crop(., brazil) %>%
   mask(., brazil)
-ssp5_brazil <- brick(here("hw3_data", "wc2.1_2.5m_tmax_BCC-CSM2-MR_ssp585_2081-2100.tif"))%>%
+ssp5_brazil <- brick(here("Rasters", "WorldClim", "wc2.1_2.5m_tmax_BCC-CSM2-MR_ssp585_2081-2100.tif"))%>%
   crop(., brazil) %>%
   mask(., brazil) ## need na.rm???
 sspdiff_brazil = ssp5_brazil - ssp1_brazil
 
+# sspdiff_brazil has 12 layers, which we know represent each month. Let's name them as such.
 month <- c("Jan", "Feb", "Mar", "Apr", "May", "Jun", 
            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 names(sspdiff_brazil) <- month
@@ -33,6 +34,7 @@ sspdiff_brazil$Jan
 
 # Extract raster data for cities
 brazil_city_diff <- raster::extract(sspdiff_brazil, brazil_cities, method = "bilinear")
+                  # raster::extract(raster, vector)
 ?raster::extract
 brazil_city_diff
 
@@ -40,6 +42,7 @@ brazil_city_diff
 almost_tidy <- brazil_city_diff %>%
   #drop_na()%>% might misalign data?
   as_tibble()%>% ###when is this needed?
+  # add column for city names
   add_column(Site = brazil_cities$city_name, .before = "Jan")
 view(almost_tidy)
 
@@ -47,7 +50,6 @@ tidy_city <- almost_tidy %>%
   pivot_longer(everything(), 
                names_to="Months", 
                values_to="temp_diff")
-
 
 ### each month a column (variable)
 brazil_city_diff2 <- brazil_cities %>% 
@@ -89,7 +91,9 @@ tidy_city_diff <- city_climate_diff %>%
                values_to="temp_diff")
 view(tidy_city_diff)
 
+
 facet_plot <- tidy_city_diff %>%
+  #this is why we needed tidydata
   mutate(Months = factor(Months, levels = c("Jan","Feb","Mar",
                                             "Apr","May","Jun",
                                             "Jul","Aug","Sep",

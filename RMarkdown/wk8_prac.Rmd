@@ -1,0 +1,635 @@
+---
+title: "wk8_prac"
+author: "Yun Zhao"
+date: "12/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Load packages
+```{r include=FALSE}
+#Load
+library("googledrive")
+library(stringr)
+library(utils)
+library(readr)
+library(here)
+
+#Wrangle
+library(janitor)
+library(tidyverse)
+library(car)
+library(crosstalk)
+library(RSQLite)
+library(dplyr)
+
+library(rasterVis)
+library(terra)
+library(RStoolbox)
+library(htmlwidgets)
+
+#Geo
+library(rgdal)
+library(sf)
+library(sp)
+library(fs)
+library(rgeos)
+library(geojson)
+library(geojsonio)
+library(raster)
+library(fpc)
+library(spatstat)
+library(spdep)
+library(geojsonio)
+
+#Mapping and Graphing
+library(plotly) # graphs
+library(ggplot2)
+library(GGally)
+library(maptools)
+library(tmap)
+library(tmaptools)
+library(GISTools)
+library(OpenStreetMap)
+library(RColorBrewer)
+library(rgeos)
+library(rmapshaper)
+library(leafpop)
+library(leaflet)
+
+#Stats
+library(broom) # or tidymodels
+#library(mapview)
+library(tidypredict)
+library(car)
+library(rstatix)
+```
+
+### Load LSAT rasters
+```{r}
+#o<-drive_download("https://drive.google.com/open?id=1MV7ym_LW3Pz3MxHrk-qErN1c_nR0NWXy",
+                  #path="Rasters/exampleGoogleDrivedata/LC08_L1TP_203023_20190513_20190521_01_T1.tar.gz", 
+                  #overwrite=T)
+
+# Unzip tar.gz
+listfiles<-dir_info(here::here("Rasters", "exampleGoogleDrivedata"))%>%
+  dplyr::filter(str_detect(path, ".gz"))%>%
+  dplyr::select(path)%>%
+  dplyr::pull()%>%   #pull is $
+  #print out the .gz file
+  print()%>%
+  as.character()%>%
+  utils::untar(exdir=here::here("Rasters", "exampleGoogleDrivedata"))
+```
+
+### Stack LSAT rasters
+```{r}
+# List your raster files excluding band 8 using the pattern argument
+listlandsat<-dir_info(here::here("Rasters", "LSAT_data"))%>%
+  dplyr::filter(str_detect(path, "[B123456790].TIF")) %>%   # 1-11
+  # band 8 is misaligned
+  dplyr::select(path)%>%
+  pull()%>%
+  as.character()%>%
+  # Load our raster layers into a stack
+  stack()
+
+# get band 8 and save as raster
+b8list<-dir_info(here::here("Rasters", "LSAT_data"))%>%
+  dplyr::filter(str_detect(path, "[B8].TIF")) %>%
+  dplyr::select(path)%>%
+  pull()%>%
+  as.character()%>%
+  raster()
+
+# resampling: ngb is a nearest neighbour sampling method
+b8correct <- b8list%>%
+  #resample(raster to be resampled, raster with parameters to sample to)
+  raster::resample(., listlandsat$LC08_L1TP_203023_20190513_20190521_01_T1_B1, 
+             method = "ngb") %>%
+  # Write out the raster to a file. str_c joins into single vector
+  raster::writeRaster(.,str_c(here::here("Rasters", "LSAT_data"), 
+                  names(b8list), 
+                  sep="/"),
+            format='GTiff', 
+            overwrite=TRUE)
+
+# Make resampled band 8 into a raster
+b8backin<-dir_info(here::here("Rasters", "LSAT_data"))%>%
+  dplyr::filter(str_detect(path, "[B8].tif")) %>%
+  dplyr::select(path)%>%
+  pull()%>%
+  as.character()%>%
+  raster()
+
+# Add resampled band 8 into the stack
+listlandsat <- listlandsat %>%
+  addLayer(., b8backin)
+
+# Check if resampling succeeded (use this earlier too)
+raster::compareRaster(listlandsat$LC08_L1TP_203023_20190513_20190521_01_T1_B1,
+              listlandsat$LC08_L1TP_203023_20190513_20190521_01_T1_B8)
+```
+
+### Clip raster to Manchester study area
+```{r}
+# Load the manchester boundary
+manchester_boundary <- st_read(here::here("Shapefiles", 
+                                          "manchester_boundary",
+                                          "manchester_boundary.shp"))
+
+# check they have the same Coordinate Reference System (CRS)
+crs(manchester_boundary)
+crs(listlandsat)
+
+# Crop and mask
+lsatmask <- listlandsat %>%
+  # now crop our temp data to the extent
+  raster::crop(., manchester_boundary)%>%
+  raster::mask(., manchester_boundary)
+
+# have raster names end in 'mask'
+outputfilenames <-
+  str_c(here::here("Rasters/LSAT_data_mask/"), names(lsatmask), "_mask" , sep="")
+
+lsatmask %>%
+  writeRaster(., outputfilenames, 
+              bylayer=TRUE, 
+              format='GTiff', 
+              overwrite=TRUE)
+```
+
+### Data Exploration
+```{r}
+# Focus on Bands 1-7
+manc<-dir_info(here::here("Rasters", "LSAT_data_mask")) %>%
+  dplyr::filter(str_detect(path, "[B1234567]_mask.tif")) %>%
+  dplyr::filter(str_detect(path, "B11", negate=TRUE)) %>% #because picks up 11
+  dplyr::select(path)%>%
+  pull()%>%
+  stack()
+
+# Name bands 1-7  
+names(manc) <- c('ultra-blue', 'blue', 'green', 'red', 'NIR', 'SWIR1', 'SWIR2') 
+
+#Explore
+crs(manc) # projection
+extent(manc) # extent
+ncell(manc) # number of cells
+dim(manc) # number of rows, columns, layers
+nlayers(manc) # number of layers
+res(manc) # xres, yres
+```
+
+# Plotting True vs False color
+```{r}
+# true colour composite
+manc_rgb <- stack(manc$red, manc$green, manc$blue)
+# false colour composite
+manc_false <- stack(manc$NIR, manc$red, manc$green)
+# Map them
+manc_rgb %>%
+  plotRGB(.,axes=TRUE, stretch="lin")
+manc_false %>%
+  plotRGB(.,axes=TRUE, stretch="lin")
+```
+
+Plot Single Bands
+```{r}
+#set the plot window size (2 by 2)
+par(mfrow = c(3,2))
+
+#plot the bands
+plot(manc$blue, main = "Blue")
+plot(manc$green, main = "Green")
+plot(manc$red, main = "Red")
+plot(manc$NIR, main = "NIR")
+plot(manc$SWIR1, main = "SWIR1")
+plot(manc$SWIR2, main = "SWIR2")
+```
+
+### Correlation
+Low statistical significance means that the bands are sufficiently different enough in their wavelength reflectance to show different things in the image. 
+```{r}
+# Correlation
+pairs(manc[[1:7]])
+
+# fancier with ggplot2, GGally, terra
+manc %>%
+  terra::as.data.frame(., na.rm=TRUE)%>%
+  dplyr::sample_n(., 100)%>%
+  ggpairs(.,axisLabels="none")
+
+```
+
+### Basic Raster Calculations: Vegetation
+```{r}
+# Make a function for calculating NDVI
+NDVIfun <- function(NIR, Red) {
+  NDVI <- (NIR - Red) / (NIR + Red)
+  return(NDVI)
+}
+
+# Use function on data
+ndvi <- NDVIfun(manc$NIR, manc$red)
+
+# Map
+ndvi %>%
+  plot(.,col = rev(terrain.colors(10)), main = "Landsat-NDVI")
+
+# Histogram
+ndvi %>%
+  hist(., breaks = 40, main = "NDVI Histogram", xlim = c(-.3,.8))
+
+# Reclassify based on histogram
+veg <- ndvi %>%
+  reclassify(., cbind(-Inf, 0.3, NA))
+
+# Remap
+veg %>%
+  plot(.,main = 'Possible Veg cover')
+
+
+# Map with context
+manc_rgb %>%
+  plotRGB(.,axes = TRUE, stretch = "lin", main = "Landsat True Color Composite")
+
+veg %>%
+  plot(., add=TRUE, legend=FALSE)
+```
+
+## Advanced Raster Calculations
+
+### Get Values from MTL file
+```{r}
+# RStoolbox MTL() option?
+
+# Get greyscale and grescale from .MTL file
+MTL<-dir_info(here::here("Rasters", "LSAT_data")) %>%
+  dplyr::filter(str_detect(path, "MTL.txt")) %>%
+  dplyr::select(path)%>%
+  pull()%>%
+  readMeta()
+
+ #To see all the attributes
+head(MTL)
+
+# Extract values from MTL
+offsetandgain <-MTL %>%
+  getMeta("B10_dn", metaData = ., what = "CALRAD")
+offsetandgain
+#offsetandgain <- subset(MTL$CALRAD, rownames(MTL$CALRAD) == "B10_dn")
+```
+
+### Calculate Land Surface Temp with vegetation info
+```{r}
+summary(listlandsat)
+# TOA, Use band 10 raster layer
+TOA <- offsetandgain$gain *
+  lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B10 + 
+  offsetandgain$offset
+
+# Brightness Temp
+Calidata <- MTL$CALBT%>%
+  terra::as.data.frame()%>%
+  mutate(Band=rownames(.))%>%
+  filter(Band=="B10_dn")
+# subset the columns
+K1 <- Calidata %>%
+  dplyr::select(K1)%>%
+  pull()
+K2 <- Calidata %>%
+  dplyr::select(K2)%>%
+  pull()
+Brighttemp <- (K2 / log((K1 / TOA) + 1))
+
+# fractional vegetation
+facveg <- (ndvi-0.2/0.5-0.2)^2
+
+#emissivity
+emiss <- 0.004*facveg+0.986
+
+# constants
+Boltzmann <- 1.38*10e-23
+Plank <- 6.626*10e-34
+c <- 2.998*10e8
+p <- Plank*(c/Boltzmann)
+
+#define remaining variables
+lambda <- 1.09e-5
+
+#run the LST calculation Land Surface Temperature
+LST <- Brighttemp/(1 +(lambda*Brighttemp/p)*log(emiss))
+# check the values
+LST
+
+LST <- LST-273.15
+plot(LST)
+```
+
+### Urban Area and Temp
+```{r}
+NDBI=((lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B6-
+         lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B5)/
+        (lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B6+
+        lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B5))
+
+NDBIfunexample <- NDVIfun(lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B6,
+                          lsatmask$LC08_L1TP_203023_20190513_20190521_01_T1_B5)
+
+plot(values(NDBI), values(LST))
+
+# stack the layers
+computeddata <- LST%>%
+  stack(.,NDBI)%>%
+  terra::as.data.frame()%>%
+  na.omit()%>%
+  # take a random subset
+  dplyr::sample_n(., 500)%>%
+  dplyr::rename(Temp="layer.1", NDBI="layer.2")
+
+# check the output
+plot(computeddata$Temp, computeddata$NDBI)
+
+heat<-ggplot(computeddata, aes(x = NDBI, y = Temp))+
+  geom_point(alpha=2, colour = "#51A0D5")+
+  labs(x = "Temperature", 
+       y = "Urban index",
+       title = "Manchester urban and temperature relationship")+
+   geom_smooth(method='lm', se=FALSE)+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# interactive plot
+ggplotly(heat)
+
+# plotly, htmlwidgets
+heat<-ggplot(computeddata, aes(x = NDBI, y = Temp))+
+  geom_point(alpha=2, colour = "#51A0D5")+
+  labs(x = "Temperature", 
+       y = "Urban index",
+       title = "Manchester urban and temperature relationship")+
+   geom_smooth(method='lm', se=FALSE)+
+  theme_classic()+
+  theme(plot.title = element_text(hjust = 0.5))
+
+# interactive plot
+ggplotly(heat)
+
+# plot whole data set
+computeddatafull <- LST%>%
+  stack(.,NDBI)%>%
+  terra::as.data.frame()%>%
+  na.omit()%>%
+  # take a random subset
+  dplyr::rename(Temp="layer.1", NDBI="layer.2")
+
+hexbins <- ggplot(computeddatafull, 
+                  aes(x=NDBI, y=Temp)) +
+  geom_hex(bins=100, na.rm=TRUE) +
+  labs(fill = "Count per bin")+
+  geom_smooth(method='lm', se=FALSE, size=0.6)+
+  theme_bw()
+
+ggplotly(hexbins)
+```
+
+### Statistical Summary
+```{r}
+#library(rstatix)
+Correlation <- computeddatafull %>%
+  cor_test(Temp, NDBI, use = "complete.obs", method = c("pearson"))
+Correlation
+
+#critical t-value
+# T is simply the calculated difference represented in units of standard error. The greater the magnitude of T, the greater the evidence against the null hypothesis. https://blog.minitab.com/en/statistics-and-quality-data-analysis/what-are-t-values-and-p-values-in-statistics
+#2-sided test, degrees of freedom
+abs(qt(0.05/2, 198268))
+
+computeddatafull %>%
+  pull(Temp)%>%
+  length()
+
+length(computeddatafull)
+```
+
+
+
+
+##  LSOA/MSOA stats
+```{r}
+# read in LSOA and project it to match Manchester boundary
+UK_LSOA <- st_read(here::here("Shapefiles", 
+                                          "Lower_Super_Output_Area_(LSOA)_IMD2019__(WGS84)-shp",
+                                          "5878ebcf-f091-4bde-8864-aa547dd45afd2020330-1-8g4usn.8evuq.shp"))%>%
+  st_transform(., 32630)
+
+# read in MSOA and project it to match Manchester boundary
+MSOA <- st_read(here::here("Shapefiles",
+                           "MSOA_EngWal_Dec_2011_Generalised_ClippedEW_0",
+                           "Middle_Layer_Super_Output_Areas_December_2011_Generalised_Clipped_Boundaries_in_England_and_Wales.shp")) %>%
+  st_transform(., 32630)
+
+qtm(manchester_boundary)
+#select only MSOA within boundary
+manchester_MSOA <- MSOA[manchester_boundary, , op=st_within]
+qtm(manchester_MSOA)
+
+#select only LSOA that intersect MSOA
+manchester_LSOA <- UK_LSOA[manchester_MSOA,]
+qtm(manchester_LSOA)
+```
+### Manchester Temp
+```{r}
+# extract mean LST value per LSOA
+LST_per_LSOA <- raster::extract(LST, manchester_LSOA, fun=mean, na.rm=TRUE, df=TRUE)
+#?raster::extract is like a spatial version of groupby + summarize
+
+# add the LSOA ID back
+LST_per_LSOA$FID<-manchester_LSOA$FID # so can later join
+
+# join the average temp to the sf
+manchester_LSOA_temp <- manchester_LSOA %>%
+  left_join(.,
+            LST_per_LSOA,
+            by="FID")%>%
+  dplyr::rename(temp=layer) # new name = old name
+```
+
+### Manchester Urban
+
+```{r}
+#define urban as NDBI greater than 0
+NDBI_urban<- NDBI > 0
+
+# Sum the pixels that are grater than 0 per LSOA
+NDBI_urban_per_LSOA <- raster::extract(NDBI_urban, manchester_LSOA, na.rm=TRUE, df=TRUE, fun=sum)
+
+# list the pixels per LSOA
+NDBI_per_LSOA_cells <- raster::extract(NDBI_urban, manchester_LSOA, na.rm=TRUE, df=TRUE, cellnumbers=TRUE)
+
+#count the pixels per LSOA
+NDBI_per_LSOA2_cells<- NDBI_per_LSOA_cells %>%
+  count(ID)
+
+#add the LSOA ID to the urban area
+NDBI_urban_per_LSOA$FID<-manchester_LSOA$FID
+
+#add the LSOA ID to the number of cells
+NDBI_per_LSOA2_cells$FID<-manchester_LSOA$FID
+
+#join these two
+Urban_info_LSOA <- NDBI_urban_per_LSOA %>%
+  left_join(.,
+            NDBI_per_LSOA2_cells,
+            by="FID")
+
+# remove what you don't need and rename
+Urban_info_LSOA_core_needed <- Urban_info_LSOA %>%
+  dplyr::rename(urban_count=layer, 
+                LSOA_cells=n) %>%
+  dplyr::select(urban_count,
+         LSOA_cells,
+         FID)%>%
+  dplyr::mutate(percent_urban=urban_count/LSOA_cells*100)
+
+# join the data 
+# one sf with temp and % urban per LSOA
+manchester_LSOA_temp_urban <- manchester_LSOA_temp %>%
+  left_join(.,
+             Urban_info_LSOA_core_needed,
+             by="FID")
+```
+
+```{r}
+Places <- st_read(here::here("prac7_data", 
+                                          "greater-manchester-latest-free.shp",
+                                          "gis_osm_places_free_1.shp")) %>%
+   st_transform(., 32630)
+
+manchester_Places <- Places[manchester_boundary,]%>%
+  filter(fclass=="city")
+```
+
+```{r}
+# this first bit makes the box bigger
+# so we can have a north arrow not overlapping the data
+# see: https://www.jla-data.net/eng/adjusting-bounding-box-of-a-tmap-map/
+bbox_new <- st_bbox(manchester_LSOA_temp_urban) # current bounding box
+
+yrange <- bbox_new$ymax - bbox_new$ymin # range of y values
+
+bbox_new[4] <- bbox_new[4] + (0.1 * yrange) # ymax - top
+bbox_new[2] <- bbox_new[2] - (0.1 * yrange) # ymin - bottom
+
+# the plot starts here
+library(tmap)
+tmap_mode("plot")
+# set the new bbox
+# remove bbox=bbox_new to see the difference
+tm1 <- tm_shape(manchester_LSOA_temp_urban, bbox = bbox_new) + 
+  tm_polygons("temp",
+              palette="OrRd",
+              legend.hist=TRUE,
+              title="Temperature")+
+  tm_shape(manchester_Places, bbox=bbox_new)+
+  tm_dots(size=0.1, col="white")+
+  tm_text(text="name", size=0.75, ymod=-0.5, col="white", fontface = "bold")+
+  #tm_legend(show=FALSE)+
+  tm_layout(frame=FALSE,
+            legend.outside=TRUE)+
+  tm_compass(type = "arrow", size=1, position = c("left", "top")) +
+  tm_scale_bar(position= c("left", "bottom"), breaks=c(0,2,4), text.size = .75)
+  #tm_credits("(a)", position=c(0,0.85), size=1.5)
+
+tm1
+
+```
+
+
+```{r}
+library(biscale)
+library(cowplot)
+library(sysfonts)
+library(extrafont) 
+library(showtext) # more fonts
+#font_add_google("Lato", regular.wt = 300, bold.wt = 700) # I like using Lato for data viz (and everything else...). Open sans is also great for web viewing.
+showtext_auto()
+
+# create classes
+data <- bi_class(manchester_LSOA_temp_urban, x = temp, y = percent_urban, style = "jenks", dim = 3)
+
+#ggplot map
+map <- ggplot() +
+ geom_sf(data = data, mapping = aes(fill = bi_class), color=NA, lwd = 0.1, show.legend = FALSE) +
+  bi_scale_fill(pal = "DkViolet", dim = 3) +
+  geom_sf(data = manchester_MSOA, mapping = aes(fill=NA), color="black", alpha=0, show.legend = FALSE)+
+  geom_sf(data=manchester_Places, mapping=aes(fill=NA), color="white", show.legend = FALSE)+
+  geom_sf_text(data=manchester_Places, aes(label = name, hjust = 0.5, vjust = -0.5),
+               nudge_x = 0, nudge_y = 0,
+               fontface = "bold",
+             color = "white",
+             show.legend = FALSE,
+             inherit.aes = TRUE)+
+  labs(
+    title = "",
+    x="", y=""
+  ) +
+  bi_theme()
+
+legend <- bi_legend(pal = "DkViolet",
+                    dim = 3,
+                    xlab = "Temperature ",
+                    ylab = "% Urban",
+                    size = 8)
+
+credit<- ("Landsat dervied temperature and urban area, taken 13/5/19")
+
+# combine map with legend
+finalPlot <- ggdraw() +
+  draw_plot(map, 0, 0, 1, 1) +
+  draw_plot(legend, 0.1, 0.1, 0.2, 0.2)
+  #draw_text(credit, 0.68, 0.1, 0.2, 0.2, size=10)
+finalPlot
+
+```
+
+```{r}
+urban_box<-ggplot(data, aes(x=bi_class, y=percent_urban, fill=bi_class)) +
+  geom_boxplot()+
+  scale_fill_manual(values=c("#CABED0", "#BC7C8F", "#806A8A", "#435786", "#AE3A4E", "#77324C", "#3F2949", "#3F2949"))+
+  labs(x="Bivariate class (temp, urban)", 
+       y="Urban %")+
+  theme_light()+
+  theme(legend.position="none") # Remove legend
+
+temp_violin<-ggplot(data, aes(x=bi_class, y=temp, fill=bi_class))+
+  geom_violin()+
+  scale_fill_manual(values=c("#CABED0", "#BC7C8F", "#806A8A", "#435786", "#AE3A4E", "#77324C", "#3F2949", "#3F2949"))+
+  labs(x="", 
+       y="Temperature")+
+   guides(fill=guide_legend(title="Class"))+
+  theme_light()+
+  theme(legend.position="none") # Remove legend
+```
+
+
+
+```{r}
+side <- plot_grid(temp_violin, urban_box, labels=c("B","C"),label_size = 12, ncol=1)
+
+all <- plot_grid(finalPlot, side, labels = c('A'), label_size = 12, ncol = 2,  rel_widths = c(2, 1))
+
+all
+
+dev.copy(device = png, filename = here::here("prac7_images", "bivaraite.png"), width = 687, height = 455) 
+
+dev.off()
+```
+
+
+
+
