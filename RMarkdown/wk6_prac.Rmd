@@ -4,14 +4,12 @@ author: "Yun Zhao"
 date: "11/16/2021"
 output: html_document
 ---
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 ## Blue Plaques
 For any given London Borough, are the Blue Plaques within that borough distributed randomly or do they exhibit some kind of dispersed or clustered pattern?
 ```{r packages, include = False}
-
 #Wrangling Munging
 library(here)
 library(janitor)
@@ -65,6 +63,8 @@ tm_shape(BoroughMap) +
 tm_shape(BluePlaques) + 
   tm_dots(col = "blue")
 
+BluePlaques
+
 #remove duplicates, which cause points out of boroughs
 BluePlaques <- distinct(BluePlaques)
 #Spatial subsetting: clip to London Bouroughs map borders. can use as st_filter
@@ -108,7 +108,7 @@ plot(window)
 BluePlaquesSub<- BluePlaquesSub %>%
   as(., 'Spatial') 
 
-# from sp to ppp object
+# from sp to ppp object (point pattern object)
 BluePlaquesSub.ppp <- ppp(x=BluePlaquesSub@coords[,1],
                           y=BluePlaquesSub@coords[,2],
                           window=window)
@@ -145,9 +145,7 @@ Qcount %>%
   summarise_all(class)
 Qcount
 ```
-
-
-Compare Observed and Expected Distributions
+### Compare Observed and Expected Distributions
 ```{r}
 sums <- Qcount %>%
   #calculate the total blue plaques (Var * Freq)
@@ -183,6 +181,7 @@ points(QCountTable$Expected, col="Blue",
 
 # Chi- squared
 teststats <- quadrat.test(BluePlaquesSub.ppp, nx = 6, ny = 6)
+teststats
 plot(BluePlaquesSub.ppp,pch=16,cex=0.5, main="Blue Plaques in Harrow")
 plot(teststats, add=T, col = "red")
 ```
@@ -288,9 +287,9 @@ dbplot + theme_bw() + coord_equal()
 
 ```{r}
 ###add a basemap
-##First get the bbox in lat long for Harrow
+##First get the bbox in lat long for Harrow. ?????why
 HarrowWGSbb <- Harrow %>%
-  st_transform(., 4326)%>%
+  st_transform(., 4326)%>%   
   st_bbox()
 
 
@@ -436,7 +435,7 @@ I_LWard_Local_count <- points_sf_joined %>%
   pull(plaquecount) %>%
   as.vector()%>%
   localmoran(., Lward.lw)%>%
-  as_tibble()
+  as_tibble() # or as database
 
 I_LWard_Local_Density <- points_sf_joined %>%
   pull(density) %>%

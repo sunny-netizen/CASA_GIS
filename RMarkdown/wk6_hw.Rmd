@@ -10,7 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r include=FALSE}
 #Wrangling Munging
 library(here)
 library(janitor)
@@ -37,30 +37,80 @@ library(GISTools)
 library(OpenStreetMap)
 ```
 
-
+## Load and Preview data
 Open Street Map POI data
   Instead: https://www.getthedata.com/open-pubs
   Instead: http://download.slipo.eu/results/osm-to-csv/europe/great-britain/
 Police data, Brighton is within the Sussex Police force
 LSOA shapefile
 ```{r}
+pubs <- read_csv(here::here("CSVs", "open_pubs.csv"), col_names = FALSE)
 
-#/Users/yun/Documents/CASA/GIS/CASA_GIS/CSVs/open_pubs.csv
-brighton_pubs <- geojson_read('brighton_pubs.geojson', parse = FALSE)
-brighton_pubs <- geojson_sf('brighton_pubs.geojson')
-plot(brighton_pubs)
+#remove lat/long  rows with na's, if any.
+pubs$X7 <- as.numeric(pubs$X7)
+pubs$X8 <- as.numeric(pubs$X8)
 
-lsoa <- st_read(here::here('Shapefiles',
-    'Lower_Super_Output_Area_(LSOA)_IMD2019__(WGS84)-shp/5878ebcf-f091-4bde-8864-aa547dd45afd2020330-1-8g4usn.8evuq.shp'))
-lsoa%>%
-  st_transform(.,27700)
+# subset rows that are not na
+pubs <- pubs[!is.na(pubs$X7),]
+pubs <- pubs[!is.na(pubs$X8),]
 
-brighton_crime <- read_csv(here:here('CSVs', '2021-09-sussex-street.csv'))%>%
+pubspts <- SpatialPointsDataFrame(coords = c(pubs[,c("X7", "X8")]),
+                                  proj4string = CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"),
+                                  data = pubs)%>%
+  st_as_sf()
+
+
+# create spatial points from XY  data set # https://riptutorial.com/r/example/6863/create-spatial-points-from-xy-data-set
+```
+### Study Area
+```{r}
+lsoa <- st_read(here::here('Shapefiles', "Lower_Super_Output_Area_(LSOA)_IMD2019__(WGS84)-shp",
+                           '5878ebcf-f091-4bde-8864-aa547dd45afd2020330-1-8g4usn.8evuq.shp'))
+
+
+brighton <- lsoa%>%
+  filter(str_detect(`lsoa11nm`,'^Brighton and Hove'))
+head(brighton)
+qtm(brighton)
+
+pubs_brighton <- brighton %>%
+  st_join(., y=pubspts, left = TRUE)
+
+pubs_brighton <- pubspts %>%
+  st_join(., y=brighton)
+
+crs(pubspts)
+crs(brighton)
+
+tmap_mode('plot')
+tm_shape(lsoa)+
+  tm_borders()
+tm_shape(brighton)+
+  tm_polygons()+
+tm_shape(pubspts)+
+  tm_dots()
+
+
+
+qtm(pubs_brighton)
+head(brighton)
+```
+
+
+```{r}
+
+pubspts.ppp %>%
+  density(., sigma=500) %>%
+  plot()
+
+crime <- read_csv(here::here('CSVs', '2021-09-sussex-street.csv'))%>%
   clean_names()
-
-
-
                    
 ```
+
+What could a DBSCAN, Moran’s I analysis of pub locations tell us about where instances of anti-social behaviour might occur?
+What limitations might there be in just looking at categorical point data?
+What other information might we need to carry out a better analysis?
+What are the limitations of spatial pattern analysis?
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.

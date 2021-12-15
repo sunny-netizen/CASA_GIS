@@ -1,0 +1,198 @@
+# Heading
+---
+title: "Name: Andy MacLachlan"
+author: 
+- |
+    | Student number: TEST
+date: "`r format(Sys.time(), '%X, %d %B, %Y')`"
+output: html_document
+---
+# Originality declaration  
+
+I, [**insert your name**], confirm that the work presented in this assessment is my own. Where information has been derived from other sources, I confirm that this has been indicated in the work.
+
+date: `r format(Sys.time(), '%d %B, %Y')`
+
+
+### Introduction
+As a consultant, I will help New York City identify issues to address to prevent evictions in its boroughs. Based on exploration.. my research question is: what factors affect the frequency of evictions in New York City boroughs?
+My research hypothesis that I will test is that there are quantifiable factors that affect the frequency of evictions in New York City boroughs, based on the 2020 data. I will use empirical models to test the null hypothesis that there is no relationship between eviction frequency and __ factor. 
+
+### Initial project scope
+ = same as intro?
+ Discuss data sources, metadata
+ why did what i did
+ 
+Dependent variable: Evictions per Borough
+Independent variable: 
+ 
+Categorical Factors: Residential/Commercial
+Geographic Factors: spatial cluster, Borough (paired with a marshal), 
+
+ 
+### Load packages
+```{r include=FALSE}
+#Load
+library(stringr)
+library(utils)
+library(readr)
+library(here)
+library(googledrive)
+
+#Wrangle
+library(janitor)
+library(tidyverse)
+library(car)
+library(crosstalk)
+library(RSQLite)
+library(dplyr)
+
+#Vector
+library(rgdal)
+library(sf)
+library(sp)
+library(fs)
+library(rgeos)
+library(geojson)
+library(geojsonio)
+
+#Raster
+library(raster)
+library(fpc)
+library(rasterVis)
+library(terra)
+library(RStoolbox)
+library(htmlwidgets)
+
+#Graphs
+library(plotly) # graphs
+library(ggplot2)
+library(GGally)
+
+#Maps
+library(maptools)
+library(tmap)
+library(tmaptools)
+library(GISTools)
+library(OpenStreetMap)
+library(RColorBrewer)
+library(rgeos)
+library(rmapshaper)
+library(leafpop)
+library(leaflet)
+#library(mapview)
+library(biscale)
+library(cowplot)
+library(sysfonts)
+library(extrafont) 
+library(showtext) # more fonts
+
+#Stats
+library(broom) # or tidymodels
+library(tidypredict)
+library(car)
+library(rstatix)
+library(spatstat)
+library(spdep)
+library(fpc)
+library(dbscan)
+```
+
+
+### Load and preview data
+Data sources:
+https://data.cityofnewyork.us/City-Government/Evictions/6z8x-wfk4
+https://data.cityofnewyork.us/City-Government/Community-Districts/yfnk-k7r4
+```{r}
+districts = st_read(here::here('data/Community Districts/geo_export_a7e319ac-3605-46a7-96c4-ded6529d1e2c.shp'))
+
+evictions = read_csv(here::here('data/Evictions.csv'), locale = locale(encoding = "latin1"), na = "")%>%
+  clean_names()
+
+head(evictions)
+#test = st_read(here::here('data/Evictions.csv'), options=c("longitude","latitude"))
+```
+
+Look at data
+```{r}
+# community districts
+colnames(districts)
+unique(districts$boro_cd)
+
+#evictions
+colnames(evictions)
+unique(evictions$council_district)
+
+evictions_datatypes <- evictions %>% 
+  summarise_all(class) %>%
+  pivot_longer(everything(), 
+               names_to="All_variables", 
+               values_to="Variable_class")
+show(evictions_datatypes)
+head(evictions)
+```
+
+
+
+```{r}
+# Before Wrangling Check
+unique(evictions$residential_commercial)
+nrow(evictions)
+evictions$residential_commercial
+evictions$longitude
+evictions$latitude
+
+# Wrangle
+evictions2 <- evictions %>%
+  dplyr::filter(str_detect(residential_commercial, 'Residential'))%>%
+  dplyr::filter(str_detect(longitude, 'NA', negate = TRUE))%>%
+  dplyr::filter(str_detect(longitude, 'NA', negate = TRUE))
+
+# After Wrangling Check
+unique(evictions2$residential_commercial)
+nrow(evictions2)
+evictions2$residential_commercial
+evictions2$longitude
+evictions2$latitude
+```
+
+
+
+
+```{r}
+
+# create simple feature from csv
+evictions_sf <- st_as_sf(evictions2, coords=c("longitude","latitude"))
+#st_as_sfc
+
+# OSM Basemap
+basemap <- districts %>%
+  st_bbox(.) %>% 
+  tmaptools::read_osm(., type = "osm", zoom = NULL)
+
+# Map
+tmap_mode('plot')
+#tm_shape(basemap)+
+#tm_rgb()+
+tm_shape(districts)+
+  tm_polygons(alpha = 0.5)+
+tm_shape(evictions-sf)+
+  tm_points()
+#tm_compass(position = c("left", "bottom"),type = "arrow") + 
+#tm_scale_bar(position = c("left", "bottom")) +
+#tm_layout(title = "Difference in life expectancy", legend.position = c("right", "bottom"))
+
+
+
+```
+
+need to normalize, so skip spatial join and histogram
+
+
+
+
+
+
+
+
+
