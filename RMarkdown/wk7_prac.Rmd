@@ -664,7 +664,8 @@ the p-value tells you if that largeness statistically acceptable - at the 95% le
 You can be confident that in your sample, nearly all of the time, that is a real and reliable coefficient value.
 ```{r}
 #run the significance test
-sigTest = abs(gwr.model$SDF$"log.median_house_price_2014.")-2 * gwr.model$SDF$"log.median_house_price_2014._se"
+sigTest = abs(gwr.model$SDF$"log(median_house_price_2014)")-
+  2 * gwr.model$SDF$"log(median_house_price_2014)_se"
 # significant if > 0
 
 #store significance results
@@ -674,10 +675,11 @@ LonWardProfiles2 <- LonWardProfiles2 %>%
 tm_shape(LonWardProfiles2) +
   tm_polygons(col = "GWRUnauthSig", 
               palette = "RdYlBu")
-
-colnames(LonWardProfiles2)
 ```
 
+```{r}
+
+```
  
 
 

@@ -7,112 +7,362 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-### Introduction
-Local business owners would like to ask city legislators to take pro-active measures against factors contributing to graffiti occurrence. These business owners have enlisted me to report on these factors. Based on .... my research question is .. ? My research hypothesis is
+# Scope
+## Task Focus
+* Local business owners would like to ask city legislators to take pro-active measures against factors contributing to graffiti occurrence. bc... These business owners have enlisted me...I interpret my task as  to report on these factors. 
 
-### Load Packages
-```{r warning=FALSE, message=FALSE}
-library(tidyverse)
-library(tmap)
-library(rgdal)
-library(broom)
-library(mapview)
+* Previous studies have identified that graffiti makers are often young males. Megler et al. (2014) use "density of males 15-24 years of age" as a demographic variable in their study. The closest age range my dataset set has is males 18 - 24 years. I will look at the education level of males of this age. 
+https://www.sciencedirect.com/science/article/pii/S0143622814001490?casa_token=Y1IMeewHwEYAAAAA:WcfuV0BAu1hqhu4plEFtk5zq-r3kQFrI9LTbjSOI-uPhWvw6ahsaDfE1EkibjoZgtbcygqrIHu8
+
+* I will focus on the year 2021, for which all of my datasets have sizeable data. This will produce the most recent results for my clients. 
+
+## Data Evaluation
+
+* My main research dataset is a csv of graffiti from Data SF. It is a large file of __ rows. Each row appears to be an observation of a reported graffiti occurrence. There are three columns of date and time for when the graffiti occurrence was opened, closed, and updated. I will focus on cases that were opened in 2021. To wrangle the data to filter only that year, I will separate the time and date into separate columns. Other columns detail categorical information about the graffiti report (such as type) and location information (such as address, supervisor district). Location information has blank entries that I will need to denote as as not available when reading in the data. Notably, there is a 'point' column that contains longitude and latitude that I can use to make the csv into a point type spatial feature. I will need to separate these into separate columns and also remove rows with assumedly unknown locations defaulted to null island (0.0).
+
+* My secondary research dataset is 2021 data on educational attainment from the American Community Household Survey. The dataset has numerous columns for number of individuals with different levels of educational attainment based on all combinations of age, race, and gender, respective margins of error, as well as total population for each of the subcategories, allowing me to normalize the counts of individuals prior to analysis. There are no NA values. With metadata as a key, the coded Row 1 will be easier to use than the lengthy Row 2 labels as column headers, so I will remove row 2. 'GEO_ID' will be a useful join field to the census tract shapefile.
+
+* I have 2021 census tract spatial data for San Francisco as a TIGER/line shapefile from DataSF. Viewing it in QGIS, it has an unknown coordinate reference system (CRS), and I am unable to find any CRS information for it on its source website, so I may need to set its CRS. The shapefile appears to have a few polygons over water bodies and parkland that I may remove, as they will likely be less relevant for urban graffiti. The shapefile attribute table shows 197 polygons total, with a column for census tract numbers that could be useful for identification. 
+https://data.sfgov.org/Geographic-Locations-and-Boundaries/Census-2010-Tracts-for-San-Francisco/rarb-5ahf
+
+## Analysis Evaluation
+
+
+## Research Direction
+* Based on .... my research question is .. ? My research hypothesis is
+My research question is to what extent does level of educational attainment of young males predict the occurrence of graffiti in San Francisco census tracts? An assumption here is that young males tend to create graffiti in their home census tracts. 
+
+
+
+## constraints -spatial or temporal, what is reasonable to analyze, other relevant
+
+
+Output:
+multiple Regression, diff edu levels
+  graffiti per census tract
+
+Interactive map of education levels
+point clustering of graffiti
+
+# Loading and Initial Wrangling
+## Load Packages
+```{r packages warning=FALSE, message=FALSE, include=FALSE}
+#Load
+library(stringr)
+library(utils)
+library(readr)
+library(here)
+library(googledrive)
+
+#Wrangle
+library(janitor)
+library(tidyverse) #includes dplyr
+library(car)
 library(crosstalk)
+library(RSQLite)
+library(dplyr)
+
+#Vector
+library(rgdal)
 library(sf)
 library(sp)
-library(spdep)
-library(car)
 library(fs)
-library(janitor)
-library(here)
+library(rgeos)
+library(geojson)
+library(geojsonio)
+
+#Raster
+library(raster)
+library(fpc)
+library(rasterVis)
+library(terra)
+library(RStoolbox)
+library(htmlwidgets)
+
+#Graphs
+library(plotly) # graphs
+library(ggplot2)
+library(GGally)
+library(shiny)
+library(shinyjs) # tmaptools::palette_explorer()
+
+#Maps
+library(maptools)
+library(tmap)
+library(tmaptools)
+library(GISTools)
+library(OpenStreetMap)
+library(RColorBrewer)
+library(rgeos)
+library(rmapshaper)
+library(leafpop)
+library(leaflet)
+library(mapview)
+library(biscale)
+library(cowplot)
+library(sysfonts)
+library(extrafont) 
+library(showtext) # more fonts
+
+#Stats
+library(corrr)
+library(car)
+library(rstatix)
+library(spatstat)
+library(fpc)
+library(dbscan)
+library(broom) # glance(), inside tidymodels package.
+library(tidypredict) # tidypredict_to_column()
+library(spatialreg) # spatial lag model
+library(spdep) #Lagrange Multiplier test
+library(spgwr) #Spatial Non-stationarity and Geographically Weighted Regression Models (GWR)
 ```
 
-### Load Data
-```{r}
+## Load and Wrangle Graffiti data
+Original crs defaults as WGS84 (EPSG:4326) with st_as_sf. Reproject to local UTM Zone 10 (EPSG:26910).
+```{r graff}
+# Load csv 
+graff_raw <- read_csv(here::here('data', 'sanfran', 'Graffiti.csv')) %>%
+  clean_names()
 
-edu<-read_csv(here::here('data', 'sanfran', 'edu_attainment', 
+# Take a look at headers
+# head(graff_raw)
+
+# Subset graffiti reports from 2021 and separate longitude and latitude
+graff_2021 <- graff_raw %>%
+  # remove unneeded date columns
+  select(!c(closed, updated)) %>%
+  # separate date and time in 'opened' column, and only keep date.
+  separate(col = opened, into = 'opened_date', sep =  ' ') %>%
+  filter(str_detect(`opened_date`,'2021$')) %>%
+  # split latitude and longitude values into separate columns
+  separate(., col = point, into = c('latitude','longitude'), sep =  ' ')
+  
+# Clean latitude and longitude values
+graff_2021$longitude <- parse_number(graff_2021$longitude)
+graff_2021$latitude <- parse_number(graff_2021$latitude)
+
+# Take a look at new headers
+# head(graff_2021)
+# Check rows have been subsetted
+#nrow(graff_raw)
+#nrow(graff_2021)
+
+# Convert csv to simple feature, set as UTM Zone 10 crs
+graff <- graff_2021 %>%
+  filter(longitude !=	0 )%>%
+  filter(latitude !=	0 )%>%
+  st_as_sf(., coords = c('longitude', 'latitude'), crs = 4326) %>%
+  st_transform(26910)
+
+# for check in qgis
+#st_write(graff, here::here('data/sanfran/graff.shp') ) 
+
+# Check 
+#qtm(graff)
+#st_crs(graff)$proj4string
+
+
+```
+
+
+## Load and Subset Data for Educational Attainment
+```{r edu}
+# import educational attainment csv
+edu_raw<-read_csv(here::here('data', 'sanfran', 'edu_attainment', 
                          'ACSST5Y2019.S1501_data_with_overlays_2021-11-24T135002.csv'),
-              skip=1)%>%
-  clean_names()
+              )%>%
+  clean_names() # replaces incompatible symbols from headers
 
-colnames(edu)
+# check that "geo_id" becomes the column headings and clean_names is effective
+#head(edu_raw)
+
+# Subset educational attainment totals for males ages 18-24
+edu <- edu_raw %>%
+  # subset all rows that are not the 'id' row
+  dplyr::filter(!str_detect(`geo_id`, 'id')) %>%
+  dplyr::select( c(geo_id, 
+                   s1501_c03_001e,
+                   s1501_c03_002e,
+                   s1501_c03_003e,
+                   s1501_c03_004e,
+                   s1501_c03_005e) ) %>%
+  mutate(geo_id = gsub('1400000US', '', geo_id) ) %>%
+  mutate(s1501_c03_001e = as.numeric(s1501_c03_001e) ) %>%
+  mutate(s1501_c03_002e = as.numeric(s1501_c03_002e) ) %>%
+  mutate(s1501_c03_003e = as.numeric(s1501_c03_003e) ) %>%
+  mutate(s1501_c03_004e = as.numeric(s1501_c03_004e) ) %>%
+  mutate(s1501_c03_005e = as.numeric(s1501_c03_005e) )
+  
+
+
+# check that "id" row is excluded and only 6 columns are selected including geo_id
 head(edu)
-
-?read_csv
 ```
 
+## Load and Wrangle Data for Census Tract Shapefile
+Data Source:
 
+Although QGIS said its CRS was unknown, fresh out of st_read it had the CRS WGS84(DD), which is a geographic coordinate reference system in  decimal degrees. I will transform it into projected CRS for spatial analysis, but I want to stay in the metric system, so I will reproject the shapefile to UTM Zone 10 (EPSG:26910) for northern California.
 
+Before: "+proj=longlat +ellps=WGS84 +no_defs"
+After: "+proj=utm +zone=10 +datum=NAD83 +units=m +no_defs"
 
-
-
-
-
-
-```{r}
-shape <- st_read(here::here("practiceQ", "geo_export_71a6699f-f413-4a0e-be0a-b334cae8259a.shp"))%>%
-  st_transform(., crs=7131)
-
-graffiti <- read_csv(here::here("practiceQ", "Graffiti.csv"))
-
-graffiti2<-graffiti%>%
-  separate(., Point, c("A", "B"), sep = ",")
-  
-graffiti2$A<-parse_number(graffiti2$A) ## leading $ and grouping character , ignored
-graffiti2$B<-parse_number(graffiti2$B) ## leading $ and grouping character , ignored
-
-graffiti3<- graffiti2%>%
-  filter(A !=	0 )%>%
-  filter(B != 0)%>%
-  st_as_sf(., coords = c("B", "A"), 
-                   crs = 4326)
-
-graffiti4<- graffiti3%>%
-filter(str_detect(Closed, "2019"))%>%
-  #filter(str_detect(`Request Type`, "Building"))%>%
-  st_transform(., crs=7131)
-
-# spatial filter
-
-graffiti_within <- graffiti4[shape, ,op=st_intersects]
-
-tmap_mode("plot")
-tm_shape(shape) +
-  tm_polygons(col = NA, alpha = 0.5) +
-tm_shape(graffiti4) +
-  tm_dots(col = "blue")
-
-
-  points_sf_joined <- shape%>%
-    st_join(graffiti4)%>%
-    add_count(geoid10)%>%
-    janitor::clean_names()%>%
-    #calculate area
-    mutate(area=st_area(.))%>%
-    #then density of the points per ward
-    mutate(density=n/area)%>%
-    dplyr::select(geoid10 , neighborhood, density)%>%
-    group_by(geoid10) %>%         
-  summarise(geoid10 = first(geoid10),
-          neighborhood= first(neighborhood),
-          density= first(density))
-
-  
-  
-```
-Now i will read in census data
-
-```{r}
-library(readr)
-library(janitor)
-
-census_family <- read_csv(here::here("practiceQ", "ACSST5Y2019.S1101_data_with_overlays_2021-11-25T162419.csv"), skip=1)%>%
- 
-  
- census_family2 <- census_family%>%
+References: 
+https://www.usgs.gov/media/images/mapping-utm-grid-conterminous-48-united-states
+https://spatialreference.org/ref/epsg/nad83-utm-zone-10n/
+https://epsg.io/26910-1739
+```{r trax}
+trax_raw <- st_read(here::here('data', 'sanfran', 
+                               'Census 2010_ Tracts for San Francisco',
+                               'geo_export_39073820-88b9-44af-83f2-6184c69d6b1e.shp') )%>%
   clean_names()
+                               
+# Check original CRS
+# st_crs(trax_raw)$proj4string
+# Result: "+proj=longlat +ellps=WGS84 +no_defs"
 
-census_family3 <- shape %>%
-  mutate(joiner = paste("1400000US", geoid10, sep=""))
+# Take a look
+# qtm(trax_raw)
+
+trax <- trax_raw %>%
+  # Reproject CRS
+  st_transform(., 26910) %>%
+  # Remove water tracks
+  dplyr::filter(name10 != 9804.01 ) %>%
+  dplyr::filter(name10 != 9901 ) %>%
+  dplyr::filter(name10 != 179.02 ) #%>%
+  #dplyr::filter(name10 != 601 )
+  
+
+# Check new CRS
+# st_crs(trax)$proj4string
+# Result: "+proj=utm +zone=10 +datum=NAD83 +units=m +no_defs"
+
+# check that water tracts are excluded
+# qtm(trax)
+```
+
+## Test map
+Test crs of census tracts and graffiti points.
+```{r map}
+tmap_mode('plot')
+tm_shape(trax)+
+  tm_polygons()+
+tm_shape(graff)+
+  tm_dots()
+```
+
+## Join Data
+Join educational attainment and graffiti to Census Tract
+```{r}
+# Check datatype of join field
+trax_summarise <- trax %>%
+  #st_drop_geometry() %>%
+  summarise_all(class) #%>%
+  pivot_longer(everything(), 
+               names_to="All_variables", 
+               values_to="Variable_class")
+#view(trax_summarise)
+
+  
+graff_trax <- trax %>%
+  st_join(graff) %>%
+  add_count(name10) %>%
+  mutate
+
+  
+# Join edu to Trax
+joined <- trax %>%
+  left_join(., edu, by= c('geoid10'= 'geo_id') )
+
+# check row counts
+nrow(trax)
+nrow(edu)
+nrow(graff)
+nrow(joined)
+
+
+
+tm_shape(joined)+
+  tm_polygons('s1501_c03_001e')
+
+head(joined)
+```
+
+## Advanced Map
+```{r}
+amap <- joined %>%
+  st_transform(., 4326)
+
+
+popup1 <-amap %>%
+  st_drop_geometry()%>%
+  dplyr::select(`s1501_c03_001e`, namelsad10)%>%
+  popupTable()
+
+pal1 <- amap %>%
+  colorBin(palette = "YlOrRd", domain=.$`s1501_c03_001e`, bins = 4, pretty = TRUE)
+
+#pal1 <-colorBin(palette = "YlOrRd", domain=Joined$`s1501_c03_002e`) #, bins=breaks)
+
+pal2 <- amap %>%
+  colorBin(palette = "YlOrRd", domain=.$`s1501_c03_003e`, bins = 4, pretty = TRUE)
+
+
+edu_levels <- leaflet(amap) %>%
+  # add basemap options
+  addTiles(group = "OSM (default)") %>%
+  
+  #add our polygons, linking to the tables we just made
+  addPolygons(color="white", 
+              weight = 2,
+              opacity = 1,
+              #dashArray = "3",
+              popup = popup1,
+              fillOpacity = 0.7,
+              fillColor = ~pal1,
+              group = "s1501_c03_001e")
+  # add a legend
+  addLegend(pal = pal2, values = ~`Hotel count`, group = c("Airbnb","Hotel"), 
+            position ="bottomleft", title = "Accomodation count") %>%
+  # specify layers control
+  addLayersControl(
+    baseGroups = c("OSM (default)", "Toner", "Toner Lite", "CartoDB"),
+    overlayGroups = c("Airbnb", "Hotels"),
+    options = layersControlOptions(collapsed = FALSE)
+  )
+  
+edu_levels
+
+leaflet(amap) %>%
+  addTiles() %>%
+  addPolygons() %>%
+  addLegend(position = 'bottomright',
+            domain = ) %>%
+  addLayersControl()
+```
+
+```{r}
+multireg
+
+(geo_id, 
+                   s1501_c03_001e,
+                   s1501_c03_002e,
+                   s1501_c03_003e,
+                   s1501_c03_004e,
+                   s1501_c03_005e)
+```
+
+
+
+
+
+```{r}
 
 ```
+
+
+
+
+

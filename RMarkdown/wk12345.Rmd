@@ -28,6 +28,7 @@ library(utils)
 library(readr)
 library(here)
 library(googledrive)
+library(usethis)
 
 #Wrangle
 library(janitor)
@@ -78,7 +79,6 @@ library(cowplot)
 library(sysfonts)
 library(extrafont) 
 library(showtext) # more fonts
-
 
 #Stats
 library(corrr)
@@ -186,6 +186,11 @@ British National Grid 27700
 proj 4: 
 
 EPSG 4236
+
+
+UTM stuff
+https://epsg.io/32618
+http://geokov.com/education/utm.aspx
 ```{r}
 qtm() # quick tmap
 tmap # https://geocompr.robinlovelace.net/adv-map.html#tmap-basics

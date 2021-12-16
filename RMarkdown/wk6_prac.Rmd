@@ -184,6 +184,8 @@ teststats <- quadrat.test(BluePlaquesSub.ppp, nx = 6, ny = 6)
 teststats
 plot(BluePlaquesSub.ppp,pch=16,cex=0.5, main="Blue Plaques in Harrow")
 plot(teststats, add=T, col = "red")
+
+?quadrat.test
 ```
 Higher frequency counts at the lower end — something reminiscent of a Poisson distribution. 
 This could indicate that for this particular set of quadrants, our pattern is close to Complete Spatial Randomness
@@ -199,8 +201,12 @@ sum clustering. Rings around points rather than squares.
 
 ```{r}
 K <- BluePlaquesSub.ppp %>%
+  # the correction specifies how points towards the edge are dealt with, in this case, border means that points towards the edge are ignored for the calculation but are included for the central points.
   Kest(., correction="border") %>%
   plot()
+
+# save results
+Kval <- as.data.frame(Kest(BluePlaquesSub.ppp, correction = "border"))
 ```
 peak saround 1200ml, with the largest bulge around 700m
 
@@ -283,7 +289,17 @@ dbplot <- dbplot + geom_polygon(data = chulls,
 dbplot + theme_bw() + coord_equal()
 ```
 
+Nina
 
+#convex hulls to wrap around points
+chulls <- data.frame()
+for (cluster in 1:max(BluePlaquesSubPoints$dbcluster)) {
+  cluster_data <- BluePlaquesSubPoints %>%
+    filter(dbcluster == cluster)
+  ch <- chull(cluster_data$coords.x1, cluster_data$coords.x2)
+  chulls <- chulls %>%
+    bind_rows(cluster_data[c(ch), ])
+}
 
 ```{r}
 ###add a basemap
@@ -316,7 +332,7 @@ autoplot.OpenStreetMap(basemap_bng)+
                
                
                
-Analysing Spatial Autocorrelation with Moran’s I, LISA and friends 
+# Analysing Spatial Autocorrelation with Moran’s I, LISA and friends 
 
 ## load data and map to check
 ```{r}
